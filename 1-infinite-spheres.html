@@ -1,0 +1,92 @@
+﻿<!DOCTYPE html>
+
+<head>
+	<meta charset="utf-8"/>
+	<title>Безкрайни сфери</title>
+
+	<script src="webgl-fmi.js"></script>	
+	
+	<script id="vshader" type="x-shader/x-vertex">
+		uniform float uAspectRatio;
+		attribute vec2 aXY;
+		varying vec2 vXY;
+
+		void main ()
+		{
+            gl_Position = vec4(aXY,0,1);
+            vXY = aXY;
+			vXY.y *= uAspectRatio;
+		}
+	</script>
+	
+    <script id="fshader" type="x-shader/x-fragment">
+        precision mediump float;
+        varying vec2 vXY;
+		uniform float uTime;
+
+		void main()
+		{
+			vec3 eye = vec3(0, 0, -10);
+			vec3 proj_plane = vec3(vXY, 0);
+
+			vec3 ray_direction = normalize(proj_plane - eye);
+
+			vec3 repeat_box = vec3(1, 1, 10);
+			
+			vec3 sphere_center = repeat_box / 2.;
+			float sphere_radius = 0.2;
+
+			vec3 camera_move_direction = vec3(0, 0, 0.01);
+			
+			vec3 curr = eye + camera_move_direction * uTime;
+
+            for (int i = 0; i < 1000; i++) {
+				curr = mod(curr, repeat_box);
+
+				float dist_to_sphere = distance(curr, sphere_center) - sphere_radius;
+				
+				if (dist_to_sphere < 0.001) {
+					float color = dot(normalize(sphere_center - curr), ray_direction);
+					gl_FragColor = vec4(color, color, color, 1);
+					return;
+				}
+
+				curr += ray_direction * dist_to_sphere;
+			}
+			
+			gl_FragColor = vec4(0,0,0, 1);
+		}
+	</script>
+	<script>
+		let startTime = Date.now();
+		function start( )
+		{
+			gl = getContext("picasso");
+			glprog = getProgram("vshader","fshader");
+			let buf = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([1, 1, 1, -3, -3, 1]), gl.STATIC_DRAW);
+			gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(0);
+			gl.uniform1f(gl.getUniformLocation(glprog, 'uAspectRatio'), gl.canvas.height / gl.canvas.width);
+			draw();
+		}
+
+		function draw( ) {
+			gl.uniform1f(gl.getUniformLocation(glprog, 'uTime'), Date.now() - startTime);
+			gl.drawArrays(gl.TRIANGLES, 0, 3);
+			requestAnimationFrame(draw);
+		}
+	</script>	
+</head>
+
+<body onload="start()">
+	<h2>Безкрайни сфери</h2>
+	<noscript>
+		Искаме JavaScript, но няма!
+	</noscript>
+	
+	<canvas id="picasso" width="600" height="400" style="border: solid;">
+		Искаме canvas, но няма!
+	</canvas>
+</body>

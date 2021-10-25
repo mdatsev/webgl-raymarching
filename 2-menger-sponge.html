@@ -1,0 +1,225 @@
+﻿<!DOCTYPE html>
+
+<head>
+	<meta charset="utf-8"/>
+	<title>Гъба на Менгер</title>
+
+	<script src="webgl-fmi.js"></script>	
+	
+	<script id="vshader" type="x-shader/x-vertex">
+		uniform mat4 uModelMatrix;
+		uniform float uAspectRatio;
+
+		attribute vec2 aXY;
+		
+		varying vec4 vPos;
+		varying vec4 vEye;
+		
+		void main ()
+		{
+            gl_Position = vec4(aXY,0,1);
+            vPos = uModelMatrix * vec4(aXY.x, aXY.y * uAspectRatio, 0, 1);
+			vEye = uModelMatrix * vec4(0, 0, -2, 1);
+		}
+	</script>
+	
+    <script id="fshader" type="x-shader/x-fragment">
+        precision mediump float;
+
+		uniform float uTime;
+		uniform int uLevel;
+		uniform vec3 uAmbientColor;
+		uniform vec3 uDiffuseColor;
+		uniform vec3 uLightDir;
+		uniform vec3 uSpecularColor;
+		uniform float uShininess;
+
+        varying vec4 vPos;
+		varying vec4 vEye;
+		
+		#define INF 1e20
+
+		float unify( float d1, float d2 ) { // union
+			return min(d1, d2);
+		}
+
+		float intersect( float d1, float d2 ) {
+			return max(d1, d2);
+		}
+
+		float subtract( float d1, float d2 ) {
+			return max(d1, -d2);
+		}
+
+		float cube(vec3 p, float r) {
+			vec3 a = abs(p.xyz) - r;
+			return min(max(max(a.x, a.y), a.z), 0.0) + length(max(a, 0.0));
+		}
+
+		float rectTubeXY(vec3 p, float r) {
+			vec2 a = abs(p.xy) - r;
+			return min(max(a.x, a.y), 0.0) + length(max(a, 0.0));
+		}
+
+		float rectTubeXZ(vec3 p, float r) {
+			vec2 a = abs(p.xz) - r;
+			return min(max(a.x, a.y), 0.0) + length(max(a, 0.0));
+		}
+
+		float rectTubeYZ(vec3 p, float r) {
+			vec2 a = abs(p.yz) - r;
+			return min(max(a.x, a.y), 0.0) + length(max(a, 0.0));
+		}
+		
+		float centerCross(vec3 p, float r) {
+			return unify(unify(
+				rectTubeXY(p, r),
+				rectTubeXZ(p, r)),
+				rectTubeYZ(p, r)
+			);
+		}
+
+		float repearedCenterCross(vec3 p, float r, float m) {
+			p += m/2.;
+			p = mod(p, m);
+			p -= m/2.;
+			return centerCross(p, r);
+		}
+
+		// distance estimator for menger sponge
+		float DE(vec3 p) {
+			float d = cube(p, 1.0);
+
+			float crossScale = 1.0;
+			for(int m = 0; m < 10; m++)
+			{
+				if (m >= uLevel) {
+					break;
+				}
+				d = subtract(d, repearedCenterCross(p, 1. / 3. / crossScale, 2.0 / crossScale));
+				crossScale *= 3.;
+			}
+		 
+			return d;
+		}
+
+		vec3 calcNormal(vec3 p, float dx) {
+			vec3 xDir = vec3(dx, 0, 0);
+			vec3 yDir = vec3(0, dx, 0);
+			vec3 zDir = vec3(0, 0, dx);
+		
+			return normalize(vec3(DE(p+xDir)-DE(p-xDir),
+						DE(p+yDir)-DE(p-yDir),
+						DE(p+zDir)-DE(p-zDir)));
+		}
+
+		float calcAO(vec3 p, vec3 n) {
+			float ao = 1.;
+			float k = 3.;
+			float delta = 0.1;
+			for (int i = 0; i < 5; i++) {
+				float fi = float(i);
+				ao -= k / pow(2., fi) * (length(fi * delta) - DE(p + n * fi * delta));
+
+			}
+			return ao;
+		}
+
+		void main()
+		{
+			vec3 eye = vEye.xyz;
+			vec3 proj_plane = vPos.xyz;
+
+			vec3 ray_direction = normalize(proj_plane - eye);
+			
+			vec3 curr = eye;
+			
+			gl_FragColor = vec4(0.8, 1., 1., 1);
+			const int MAX_STEPS = 1000;
+            for (int i = 0; i < MAX_STEPS; i++) {
+				float dist = DE(curr);
+				
+				if (dist < .00001) {
+					vec3 normal = calcNormal(curr, .000001);
+
+					vec3 color = vec3(1, 1, 0);
+					
+					vec3 light = normalize(-ray_direction);
+					color *= uAmbientColor;
+					color += color*max(dot(normal,light),0.0);
+					
+					float ao = calcAO(curr, normal);
+					gl_FragColor = vec4(color * ao, 1);
+					break;
+				}
+
+				if (curr.x*curr.x + curr.y*curr.y + curr.z*curr.z > 25.) {
+					break;
+				}
+
+				curr += ray_direction * dist;
+			}
+		}
+	</script>
+	<script>
+		let startTime = Date.now();
+		level = 5;
+		function start( )
+		{
+			gl = getContext("picasso");
+			glprog = getProgram("vshader","fshader");
+			let buf = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([1, 1, 1, -3, -3, 1]), gl.STATIC_DRAW);
+			gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(0);
+			
+			uTime = gl.getUniformLocation(glprog, 'uTime')
+			uLevel = gl.getUniformLocation(glprog, 'uLevel')
+			uModelMatrix = gl.getUniformLocation(glprog, 'uModelMatrix');
+			uAmbientColor = gl.getUniformLocation(glprog, 'uAmbientColor');
+			
+			gl.uniform3f(uAmbientColor,0.6,0.6,0.6);
+			gl.uniform1f(gl.getUniformLocation(glprog, 'uAspectRatio'), gl.canvas.height / gl.canvas.width);
+
+			draw();
+		}
+
+		function draw( ) {
+			var time = (Date.now() - startTime)/1000.;
+			
+			identity();
+			yRotate(0.5*time)
+			xRotate(0.25*time)
+			translate([0,0, 2.2*Math.sign(Math.sin(0.5*time)) *(Math.abs(Math.sin(0.5*time)) ** (3/5))])
+			useMatrix();
+			
+			gl.uniform1f(uTime, time);
+			gl.uniform1i(uLevel, level);
+
+			gl.drawArrays(gl.TRIANGLES, 0, 3);
+			requestAnimationFrame(draw);
+		}
+	</script>	
+</head>
+
+<body onload="start()">
+	<h2>Гъба на менгер</h2>
+
+	<noscript>
+		Искаме JavaScript, но няма!
+	</noscript>
+	
+	<canvas id="picasso" width="1280" height="720" style="border: solid;">
+		Искаме canvas, но няма!
+	</canvas>
+	<br>
+	<button onclick="level=1">1</button>
+	<button onclick="level=2">2</button>
+	<button onclick="level=3">3</button>
+	<button onclick="level=4">4</button>
+	<button onclick="level=5">5</button>
+	<button onclick="level=6">6</button>
+	<button onclick="level=7">7</button>
+	<button onclick="level=8">8</button>
+</body>
