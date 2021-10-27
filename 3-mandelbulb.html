@@ -139,7 +139,7 @@
 		var	y = undefined;
 		smoothFactor = 15.;
 		powerFactor = 8.;
-		doAnimation = false;
+		doAnimation = true;
 		function start( )
 		{
 			gl = getContext("picasso");
@@ -263,6 +263,6 @@
 	<br>
 	Smooth: <input type="range" step=any value=15 oninput="smoothFactor = this.value"> <br>
 	Power: <input type="range" min=1.2 max=9.6 value=8 step=any oninput="powerFactor = this.value">	 <br>
-	Animation: <input type="checkbox" onchange="doAnimation = this.checked">
+	Animation: <input type="checkbox" onchange="doAnimation = this.checked" checked>
 
 </body>
